@@ -36,8 +36,6 @@ pip install --editable ./
 ### Pretrained XLSR
 The pretrained model XLSR can be found at this [link](https://dl.fbaipublicfiles.com/fairseq/wav2vec/xlsr2_300m.pt).
 
-We have uploaded the pretrained models of our experiments [here](https://drive.google.com/file/d/14e6d6z4KTt5ZDPTjh5PJloNzQAxivyEu/view?usp=sharing).
-
 ### Datasets
 We used the LA partition of ASVspoof 2019 for training and validation, it can be downloaded from [here](https://datashare.ed.ac.uk/handle/10283/3336).
 
@@ -70,8 +68,6 @@ We have uploaded the pretrained models of our experiments to 🤗 HugginFace:
 | XLSR-Mamba-DF | 319M  | [🤗 HuggingFace](https://huggingface.co/AustinXiao/XLSR-Mamba-DF)  |
 
 </div>
-
-You could also download the checkpoints by [Google Drive](https://drive.google.com/file/d/14e6d6z4KTt5ZDPTjh5PJloNzQAxivyEu/view?usp=sharing).
 
 ## Results
 
