@@ -83,6 +83,22 @@ def finish_wandb(run):
         print(f'[wandb] Finish failed; training results are unaffected: {exc}')
 
 
+def resolve_resume_checkpoint(resume):
+    path = Path(resume).expanduser().resolve()
+    if path.is_file():
+        return path
+    if not path.is_dir():
+        raise FileNotFoundError(f'Resume path not found: {path}')
+    candidates = list(path.glob('models/*/last.pth'))
+    if not candidates:
+        candidates = list(path.rglob('last.pth'))
+    if len(candidates) != 1:
+        raise RuntimeError(
+            f'Expected exactly one last.pth under {path}, found {len(candidates)}'
+        )
+    return candidates[0]
+
+
 def load_metadata(csv_path):
     label_dict = {}
     with open(csv_path, mode='r') as file:
@@ -256,7 +272,7 @@ if __name__ == '__main__':
     parser.add_argument('--output_dir', type=str, default='.',
                         help='Root directory for models and Scores')
     parser.add_argument('--resume', type=str, default=None,
-                        help='Path to last.pth for full training-state resume')
+                        help='Timestamp run directory (or legacy last.pth path) to resume')
     parser.add_argument('--use_wandb', default=True,
                         type=lambda x: (str(x).lower() in ['true', 'yes', '1']),
                         help='Log training metrics to W&B when credentials are valid')
@@ -355,7 +371,7 @@ if __name__ == '__main__':
     if args.comment:
         model_tag = model_tag + '_{}'.format(args.comment)
     if args.resume:
-        resume_path = Path(args.resume).expanduser().resolve()
+        resume_path = resolve_resume_checkpoint(args.resume)
         model_save_path = resume_path.parent
         run_dir = (
             model_save_path.parent.parent
@@ -522,9 +538,6 @@ if __name__ == '__main__':
     best_loss=float('inf')
 
     if args.resume:
-        resume_path = Path(args.resume).expanduser().resolve()
-        if not resume_path.is_file():
-            raise FileNotFoundError(f'Resume checkpoint not found: {resume_path}')
         state = torch.load(resume_path, map_location=device)
         model.load_state_dict(state['model'])
         optimizer.load_state_dict(state['optimizer'])
