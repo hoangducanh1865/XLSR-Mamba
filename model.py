@@ -12,7 +12,7 @@ class MambaConfig:
     ssm_cfg: dict = field(default_factory=dict)
     rms_norm: bool = True
     residual_in_fp32: bool = True
-    fused_add_norm: bool = True
+    fused_add_norm: bool = False
     pad_vocab_size_multiple: int = 8
     
 class SSLModel(nn.Module): #W2V
@@ -75,4 +75,3 @@ class Model(nn.Module):
         x = x.squeeze(dim=1)
         out =self.conformer(x) 
         return out
-

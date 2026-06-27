@@ -96,8 +96,11 @@ def create_block(
         ssm_cfg = {}
     factory_kwargs = {"device": device, "dtype": dtype}
     mixer_cls = partial(Mamba, layer_idx=layer_idx, **ssm_cfg, **factory_kwargs)
+    norm_impl = RMSNorm if fused_add_norm else nn.RMSNorm
     norm_cls = partial(
-        nn.LayerNorm if not rms_norm else RMSNorm, eps=norm_epsilon, **factory_kwargs
+        nn.LayerNorm if not rms_norm else norm_impl,
+        eps=norm_epsilon,
+        **factory_kwargs,
     )
     if not bidirectional:
         block = Block(
@@ -202,7 +205,8 @@ class BiMixerModel(nn.Module):
         )
         
 
-        self.norm_f = (nn.LayerNorm if not rms_norm else RMSNorm)(
+        norm_impl = RMSNorm if fused_add_norm else nn.RMSNorm
+        self.norm_f = (nn.LayerNorm if not rms_norm else norm_impl)(
             d_model, eps=norm_epsilon, **factory_kwargs
         )
 
@@ -312,7 +316,8 @@ class MixerModel(nn.Module):
             ]
         )
 
-        self.norm_f = (nn.LayerNorm if not rms_norm else RMSNorm)(
+        norm_impl = RMSNorm if fused_add_norm else nn.RMSNorm
+        self.norm_f = (nn.LayerNorm if not rms_norm else norm_impl)(
             d_model, eps=norm_epsilon, **factory_kwargs
         )
 
@@ -409,4 +414,3 @@ class MixerModel(nn.Module):
         hidden_states = self.classifier(hidden_states)
         
         return hidden_states
-
