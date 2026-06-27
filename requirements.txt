@@ -14,4 +14,6 @@ bitarray==2.9.2
 regex==2023.12.25
 causal-conv1d==1.1.3.post1
 mamba-ssm==1.1.4
-fairseq @ git+https://github.com/facebookresearch/fairseq.git@a54021305d6b3c4c5959ac9395135f63202db8f1
+
+# Install Fairseq separately with CUDA_HOME unset. Its legacy CUDA extensions
+# include THC/THC.h, which is unavailable in the pinned PyTorch version.
