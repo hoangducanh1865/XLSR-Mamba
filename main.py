@@ -1,6 +1,8 @@
 import argparse
 import sys
 import os
+import json
+from datetime import datetime
 from pathlib import Path
 import torch
 from torch import nn
@@ -12,6 +14,74 @@ from utils import reproducibility
 from utils import read_asvspoof5_metadata, read_metadata
 import numpy as np
 import csv
+
+
+def load_wandb_key(env_path):
+    key = os.environ.get('WANDB_KEY') or os.environ.get('WANDB_API_KEY')
+    path = Path(env_path).expanduser()
+    if key or not path.is_file():
+        return key
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith('#') or '=' not in line:
+            continue
+        name, value = line.split('=', 1)
+        if name.strip() in ('WANDB_KEY', 'WANDB_API_KEY'):
+            return value.strip().strip('"').strip("'")
+    return None
+
+
+def init_wandb(args, run_dir, run_id=None):
+    if not args.use_wandb:
+        return None
+    key = load_wandb_key(args.wandb_env)
+    if not key:
+        print('[wandb] WANDB_KEY not found; continuing without W&B.')
+        return None
+    try:
+        import wandb
+        if not wandb.login(key=key, relogin=True, timeout=15):
+            print('[wandb] Login failed; continuing without W&B.')
+            return None
+        run = wandb.init(
+            project=args.wandb_project,
+            name=run_dir.name,
+            id=run_id,
+            resume='must' if run_id else None,
+            config=vars(args),
+            dir=str(run_dir),
+            settings=wandb.Settings(init_timeout=30),
+        )
+        (run_dir / 'wandb_run_id.txt').write_text(run.id + '\n')
+        return run
+    except Exception as exc:
+        print(f'[wandb] Disabled after initialization error: {exc}')
+        return None
+
+
+def wandb_log(run, metrics, step):
+    if run is None:
+        return None
+    try:
+        run.log(metrics, step=step)
+        return run
+    except Exception as exc:
+        print(f'[wandb] Logging disabled after error: {exc}')
+        try:
+            run.finish(exit_code=1)
+        except Exception:
+            pass
+        return None
+
+
+def finish_wandb(run):
+    if run is None:
+        return
+    try:
+        run.finish()
+    except Exception as exc:
+        print(f'[wandb] Finish failed; training results are unaffected: {exc}')
+
 
 def load_metadata(csv_path):
     label_dict = {}
@@ -62,7 +132,7 @@ def evaluate_accuracy(dev_loader, model, device, max_batches=0):
     val_loss /= num_total
     test_accuracy = 100. * correct / num_total
     print('Test accuracy: ' +str(test_accuracy)+'%')
-    return val_loss
+    return val_loss, test_accuracy
 
 def produce_evaluation_file(dataset, model, device, save_path):
     data_loader = DataLoader(dataset, batch_size=40, shuffle=False, drop_last=False)
@@ -89,6 +159,7 @@ def produce_evaluation_file(dataset, model, device, save_path):
 
 def train_epoch(train_loader, model, lr, optim, device, max_batches=0):
     num_total = 0.0
+    total_loss = 0.0
     model.train()
 
     #set objective (Loss) functions
@@ -108,11 +179,13 @@ def train_epoch(train_loader, model, lr, optim, device, max_batches=0):
         batch_y = batch_y.view(-1).type(torch.int64).to(device)
         batch_out = model(batch_x)
         batch_loss = criterion(batch_out, batch_y)     
+        total_loss += batch_loss.item() * batch_size
         optim.zero_grad()
         batch_loss.backward()
         optim.step()
         i=i+1
     sys.stdout.flush()
+    return total_loss / num_total
        
 
 if __name__ == '__main__':
@@ -184,6 +257,17 @@ if __name__ == '__main__':
                         help='Root directory for models and Scores')
     parser.add_argument('--resume', type=str, default=None,
                         help='Path to last.pth for full training-state resume')
+    parser.add_argument('--use_wandb', default=True,
+                        type=lambda x: (str(x).lower() in ['true', 'yes', '1']),
+                        help='Log training metrics to W&B when credentials are valid')
+    parser.add_argument('--wandb_project', type=str, default='XLSR-Mamba',
+                        help='W&B project name')
+    parser.add_argument(
+        '--wandb_env',
+        type=str,
+        default='~/thuhb/env/XLSR-Mamba/.env',
+        help='File containing WANDB_KEY; failures never stop training',
+    )
     
     #Train
     parser.add_argument('--train', default=True, type=lambda x: (str(x).lower() in ['true', 'yes', '1']),
@@ -270,13 +354,28 @@ if __name__ == '__main__':
         args.algo, dataset_tag, args.loss, args.lr,args.emb_size, args.num_encoders)
     if args.comment:
         model_tag = model_tag + '_{}'.format(args.comment)
-    models_root = Path(args.output_dir) / 'models'
-    models_root.mkdir(parents=True, exist_ok=True)
-    model_save_path = models_root / model_tag
     if args.resume:
-        model_save_path = Path(args.resume).expanduser().resolve().parent
+        resume_path = Path(args.resume).expanduser().resolve()
+        model_save_path = resume_path.parent
+        run_dir = (
+            model_save_path.parent.parent
+            if model_save_path.parent.name == 'models'
+            else model_save_path
+        )
+    else:
+        run_dir = (
+            Path(args.output_dir).expanduser().resolve()
+            / datetime.now().strftime('%Y_%m_%d_%H_%M_%S')
+        )
+        model_save_path = run_dir / 'models' / model_tag
+    run_dir.mkdir(parents=True, exist_ok=True)
+    models_root = run_dir / 'models'
+    models_root.mkdir(parents=True, exist_ok=True)
+    with (run_dir / 'hyperparameters.json').open('w') as handle:
+        json.dump(vars(args), handle, indent=2, sort_keys=True)
     
     print('Model tag: '+ model_tag)
+    print('Run directory: {}'.format(run_dir))
 
     #set model save directory
     model_save_path.mkdir(parents=True, exist_ok=True)
@@ -284,6 +383,14 @@ if __name__ == '__main__':
     best_save_path.mkdir(parents=True, exist_ok=True)
     model_save_path = str(model_save_path)
     best_save_path = str(best_save_path)
+
+    wandb_id_path = run_dir / 'wandb_run_id.txt'
+    wandb_run_id = (
+        wandb_id_path.read_text().strip()
+        if args.resume and wandb_id_path.is_file()
+        else None
+    )
+    wandb_run = init_wandb(args, run_dir, wandb_run_id)
     
     #GPU device
     device = 'cuda' if torch.cuda.is_available() else 'cpu'                  
@@ -430,7 +537,7 @@ if __name__ == '__main__':
     if args.train:
         while not_improving < args.num_epochs and epoch < args.max_epochs:
             print('######## Epoch {} ########'.format(epoch))
-            train_epoch(
+            train_loss = train_epoch(
                 train_loader,
                 model,
                 args.lr,
@@ -438,7 +545,7 @@ if __name__ == '__main__':
                 device,
                 max_batches=args.max_train_batches,
             )
-            val_loss = evaluate_accuracy(
+            val_loss, val_accuracy = evaluate_accuracy(
                 dev_loader,
                 model,
                 device,
@@ -474,6 +581,18 @@ if __name__ == '__main__':
                 },
                 os.path.join(model_save_path, 'last.pth'),
             )
+            wandb_run = wandb_log(
+                wandb_run,
+                {
+                    'epoch': epoch,
+                    'train/loss': train_loss,
+                    'validation/loss': val_loss,
+                    'validation/accuracy': val_accuracy,
+                    'train/learning_rate': optimizer.param_groups[0]['lr'],
+                    'train/not_improving': not_improving,
+                },
+                step=epoch,
+            )
             print('\n{} - {}'.format(epoch, val_loss))
             print('n-best loss:', bests)
             epoch+=1
@@ -481,6 +600,7 @@ if __name__ == '__main__':
 
     if not args.eval_after_train:
         print('Skipping post-training evaluation (--eval_after_train false).')
+        finish_wandb(wandb_run)
         sys.exit(0)
 
     print('######## Eval ########')
@@ -508,7 +628,7 @@ if __name__ == '__main__':
     if args.comment_eval:
         model_tag = model_tag + '_{}'.format(args.comment_eval)
 
-    score_dir = Path(args.output_dir) / 'Scores' / tracks
+    score_dir = run_dir / 'Scores' / tracks
     score_dir.mkdir(parents=True, exist_ok=True)
     score_path = score_dir / '{}.txt'.format(model_tag)
 
@@ -541,3 +661,5 @@ if __name__ == '__main__':
         produce_evaluation_file(eval_set, model, device, str(score_path))
     else:
         print('Score file already exists: {}'.format(score_path))
+
+    finish_wandb(wandb_run)

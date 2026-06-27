@@ -16,6 +16,7 @@ conda activate xlsr_mamba
 
 DATA_ROOT=/home/user14/anhhd/spoof/datasets/asvspoof5
 XLSR_PATH=${XLSR_MAMBA_XLSR_PATH:-/home/user14/thuhb/data_spoof/xlsr2_300m.pt}
+WANDB_ENV=${WANDB_ENV:-/home/user14/thuhb/env/XLSR-Mamba/.env}
 
 test -f "${DATA_ROOT}/protocols/ASVspoof5.train.tsv"
 test -d "${DATA_ROOT}/flac_T"
@@ -37,5 +38,8 @@ srun python -u main.py \
   --max_epochs 75 \
   --eval_after_train false \
   --output_dir outputs/asvspoof5_algo3 \
+  --use_wandb true \
+  --wandb_env "${WANDB_ENV}" \
+  --wandb_project XLSR-Mamba \
   --comment asv5_algo3 \
   "${RESUME_ARGS[@]}"
