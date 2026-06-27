@@ -169,3 +169,13 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+.DS_Store
+stuff/
+debug/
+logs/
+outputs/
+models/
+xlsr2_300m.pt
+*.out
+*.err

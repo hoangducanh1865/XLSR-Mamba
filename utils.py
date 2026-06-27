@@ -31,6 +31,26 @@ def read_metadata(dir_meta, is_eval=False):
              file_list.append(key)
              d_meta[key] = 1 if label == 'bonafide' else 0
         return d_meta,file_list
+
+
+def read_asvspoof5_metadata(dir_meta, is_eval=False):
+    d_meta = {}
+    file_list = []
+    with open(dir_meta, "r") as f:
+        for line in f:
+            parts = line.strip().split()
+            if not parts:
+                continue
+            if len(parts) < 9:
+                raise ValueError(
+                    f"Unexpected ASVspoof5 protocol line in {dir_meta}: {line.strip()}"
+                )
+            key = parts[1]
+            file_list.append(key)
+            if not is_eval:
+                d_meta[key] = 1 if parts[8] == "bonafide" else 0
+
+    return file_list if is_eval else (d_meta, file_list)
     
 def reproducibility(random_seed, args=None):                                  
     torch.manual_seed(random_seed)
@@ -52,4 +72,4 @@ def my_collate(batch): #Dataset return sample = (utterance, target, nameFile) #s
   data = [dp[0] for dp in batch]
   label = [dp[1] for dp in batch]
   nameFile = [dp[2] for dp in batch]
-  return (data, label, nameFile) 
+  return (data, label, nameFile)

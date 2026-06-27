@@ -16,10 +16,11 @@ class MambaConfig:
     pad_vocab_size_multiple: int = 8
     
 class SSLModel(nn.Module): #W2V
-    def __init__(self,device):
+    def __init__(self, device, checkpoint_path):
         super(SSLModel, self).__init__()
-        cp_path = './xlsr2_300m.pt'   # Change the pre-trained XLSR model path. 
-        model, _, _ = fairseq.checkpoint_utils.load_model_ensemble_and_task([cp_path])
+        model, _, _ = fairseq.checkpoint_utils.load_model_ensemble_and_task(
+            [checkpoint_path]
+        )
         self.model = model[0]
         self.device=device
         self.out_dim = 1024
@@ -50,7 +51,7 @@ class Model(nn.Module):
         ####
         # create network wav2vec 2.0
         ####
-        self.ssl_model = SSLModel(self.device)
+        self.ssl_model = SSLModel(self.device, args.xlsr_path)
         self.LL = nn.Linear(1024, args.emb_size)
         print('W2V + mamba')
         self.first_bn = nn.BatchNorm2d(num_features=1)
@@ -74,5 +75,4 @@ class Model(nn.Module):
         x = x.squeeze(dim=1)
         out =self.conformer(x) 
         return out
-
 
