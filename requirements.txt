@@ -5,6 +5,7 @@ librosa==0.10.1
 soundfile==0.12.1
 tqdm==4.66.2
 einops==0.7.0
+transformers==4.38.2
 packaging==23.2
 ninja==1.11.1.1
 hydra-core==1.0.7
