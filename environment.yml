@@ -9,7 +9,7 @@ dependencies:
   - setuptools=69.5.1
   - wheel
   - cython=0.29.36
-  - numpy=1.26.3
+  - numpy=1.23.5
   - ffmpeg
   - libsndfile
   - pytorch=2.2.1
