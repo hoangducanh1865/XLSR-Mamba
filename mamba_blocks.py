@@ -16,6 +16,21 @@ try:
 except ImportError:
     RMSNorm, layer_norm_fn, rms_norm_fn = None, None, None
 
+
+class TorchRMSNorm(nn.Module):
+    """PyTorch implementation matching Mamba's RMSNorm parameterization."""
+
+    def __init__(self, dim, eps=1e-5, device=None, dtype=None):
+        super().__init__()
+        self.eps = eps
+        self.weight = nn.Parameter(torch.ones(dim, device=device, dtype=dtype))
+
+    def forward(self, x):
+        input_dtype = x.dtype
+        normalized = x.float() * torch.rsqrt(x.float().pow(2).mean(-1, keepdim=True) + self.eps)
+        return normalized.to(input_dtype) * self.weight
+
+
 class BiBlock(nn.Module):
     def __init__(
         self, dim, mixer_cls, norm_cls=nn.LayerNorm, fused_add_norm=False, residual_in_fp32=False
@@ -96,7 +111,7 @@ def create_block(
         ssm_cfg = {}
     factory_kwargs = {"device": device, "dtype": dtype}
     mixer_cls = partial(Mamba, layer_idx=layer_idx, **ssm_cfg, **factory_kwargs)
-    norm_impl = RMSNorm if fused_add_norm else nn.RMSNorm
+    norm_impl = RMSNorm if fused_add_norm else TorchRMSNorm
     norm_cls = partial(
         nn.LayerNorm if not rms_norm else norm_impl,
         eps=norm_epsilon,
@@ -205,7 +220,7 @@ class BiMixerModel(nn.Module):
         )
         
 
-        norm_impl = RMSNorm if fused_add_norm else nn.RMSNorm
+        norm_impl = RMSNorm if fused_add_norm else TorchRMSNorm
         self.norm_f = (nn.LayerNorm if not rms_norm else norm_impl)(
             d_model, eps=norm_epsilon, **factory_kwargs
         )
@@ -316,7 +331,7 @@ class MixerModel(nn.Module):
             ]
         )
 
-        norm_impl = RMSNorm if fused_add_norm else nn.RMSNorm
+        norm_impl = RMSNorm if fused_add_norm else TorchRMSNorm
         self.norm_f = (nn.LayerNorm if not rms_norm else norm_impl)(
             d_model, eps=norm_epsilon, **factory_kwargs
         )
